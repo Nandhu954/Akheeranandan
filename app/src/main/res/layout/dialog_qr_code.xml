@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="@drawable/bg_card_rounded">
+
+    <TextView
+        android:id="@+id/tvDialogTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Verification QR Code"
+        android:textColor="@color/primary"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvDialogSubtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Present this QR code at the university handover desk to verify ownership."
+        android:textAlignment="center"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="3dp">
+
+        <ImageView
+            android:id="@+id/ivQRCode"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:background="#FFFFFF"
+            android:contentDescription="Claim QR Code" />
+    </androidx.cardview.widget.CardView>
+
+    <TextView
+        android:id="@+id/tvClaimCode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="CAMPUSFIND_CLAIM_1_1725800000"
+        android:textColor="@color/text_primary"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:background="#EDEDED"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnCloseDialog"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="18dp"
+        android:text="Close"
+        android:textAllCaps="false"
+        android:textColor="@color/text_white"
+        app:backgroundTint="@color/primary"
+        app:cornerRadius="10dp" />
+
+</LinearLayout>

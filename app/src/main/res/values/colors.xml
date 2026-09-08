@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand Colors -->
+    <color name="primary">#1B2A4A</color>
+    <color name="primary_dark">#0F1B33</color>
+    <color name="primary_light">#2E426B</color>
+    <color name="accent">#FF6B35</color>
+    <color name="accent_dark">#E0531D</color>
+    <color name="accent_light">#FFA07A</color>
+
+    <!-- Background & Surface -->
+    <color name="background">#F8F9FA</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#ECEFF1</color>
+
+    <!-- Typography -->
+    <color name="text_primary">#1B2A4A</color>
+    <color name="text_secondary">#6C757D</color>
+    <color name="text_white">#FFFFFF</color>
+    <color name="text_hint">#9E9E9E</color>
+
+    <!-- Status Badge Colors -->
+    <color name="status_active">#FF6B35</color>
+    <color name="status_active_bg">#FFF0EB</color>
+    <color name="status_matched">#1976D2</color>
+    <color name="status_matched_bg">#E3F2FD</color>
+    <color name="status_returned">#2E7D32</color>
+    <color name="status_returned_bg">#E8F5E9</color>
+    <color name="status_pending">#F57C00</color>
+    <color name="status_pending_bg">#FFF3E0</color>
+
+    <!-- Neutrals & Borders -->
+    <color name="divider">#E0E0E0</color>
+    <color name="card_stroke">#E5E7EB</color>
+</resources>

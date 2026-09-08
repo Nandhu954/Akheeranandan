@@ -1,0 +1,32 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base Application Theme using Material 3 -->
+    <style name="Theme.CampusFind" parent="Theme.Material3.Light.NoActionBar">
+        <!-- Primary Brand Colors -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/text_white</item>
+        <item name="colorPrimaryContainer">@color/primary_light</item>
+        <item name="colorOnPrimaryContainer">@color/text_white</item>
+
+        <!-- Secondary / Accent Colors -->
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorOnSecondary">@color/text_white</item>
+        <item name="colorSecondaryContainer">@color/accent_light</item>
+        <item name="colorOnSecondaryContainer">@color/primary_dark</item>
+
+        <!-- Background & Surface -->
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+
+        <!-- Status Bar & Navigation Bar -->
+        <item name="android:statusBarColor">@color/primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- Toolbar Title Style -->
+    <style name="CampusFind.ToolbarTitle" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textColor">@color/text_white</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">19sp</item>
+    </style>
+</resources>
