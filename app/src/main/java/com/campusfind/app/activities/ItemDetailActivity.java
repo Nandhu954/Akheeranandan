@@ -28,6 +28,8 @@ public class ItemDetailActivity extends AppCompatActivity {
     private TextView tvDetailLocationLabel, tvDetailLocation, tvDetailDateLabel, tvDetailDate, tvDetailDescription;
     private TextView tvReporterName, tvReporterDetails, tvOwnershipNotice;
     private MaterialButton btnClaimItem, btnViewClaimQR;
+    private com.google.android.material.card.MaterialCardView cardItemPhoto;
+    private ImageView ivItemPhoto;
 
     private Item currentItem;
     private DatabaseHelper dbHelper;
@@ -74,6 +76,8 @@ public class ItemDetailActivity extends AppCompatActivity {
 
         btnClaimItem = findViewById(R.id.btnClaimItem);
         btnViewClaimQR = findViewById(R.id.btnViewClaimQR);
+        cardItemPhoto = findViewById(R.id.cardItemPhoto);
+        ivItemPhoto = findViewById(R.id.ivItemPhoto);
     }
 
     private void setupToolbar() {
@@ -101,6 +105,18 @@ public class ItemDetailActivity extends AppCompatActivity {
             tvDetailDateLabel.setText("Date Found");
             tvDetailTypeBadge.setTextColor(ContextCompat.getColor(this, R.color.primary));
             tvDetailTypeBadge.setBackgroundResource(R.drawable.badge_matched);
+
+            // Show photo if available
+            String photoPath = currentItem.getPhotoPath();
+            if (photoPath != null && !photoPath.isEmpty()) {
+                cardItemPhoto.setVisibility(View.VISIBLE);
+                try {
+                    android.net.Uri photoUri = android.net.Uri.parse(photoPath);
+                    ivItemPhoto.setImageURI(photoUri);
+                } catch (Exception e) {
+                    cardItemPhoto.setVisibility(View.GONE);
+                }
+            }
         } else {
             tvDetailLocationLabel.setText("Location Lost");
             tvDetailDateLabel.setText("Date Lost");

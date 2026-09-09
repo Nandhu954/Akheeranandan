@@ -18,7 +18,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String TAG = "DatabaseHelper";
     private static final String DATABASE_NAME = "CampusFind.db";
-    private static final int DATABASE_VERSION = 1;
+    private static final int DATABASE_VERSION = 2;
 
     // Table Names
     public static final String TABLE_USERS = "Users";
@@ -53,6 +53,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static final String COL_ITEM_TYPE = "item_type";
     public static final String COL_QR_PAYLOAD = "qr_payload";
     public static final String COL_CLAIM_STATUS = "claim_status";
+    public static final String COL_PHOTO_PATH = "photo_path";
 
     // Create Table Statements
     private static final String CREATE_TABLE_USERS = "CREATE TABLE " + TABLE_USERS + " ("
@@ -84,6 +85,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             + COL_LOCATION_FOUND + " TEXT NOT NULL, "
             + COL_DATE_FOUND + " TEXT NOT NULL, "
             + COL_STATUS + " TEXT DEFAULT 'Active', "
+            + COL_PHOTO_PATH + " TEXT, "
             + "FOREIGN KEY(" + COL_USER_ID + ") REFERENCES " + TABLE_USERS + "(" + COL_USER_ID + ") ON DELETE CASCADE"
             + ");";
 
@@ -126,11 +128,21 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_CLAIMS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_FOUND_ITEMS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOST_ITEMS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
-        onCreate(db);
+        if (oldVersion < 2) {
+            // Migration: add photo_path column to FoundItems (preserves all existing data)
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_FOUND_ITEMS + " ADD COLUMN " + COL_PHOTO_PATH + " TEXT");
+            } catch (Exception e) {
+                Log.w(TAG, "photo_path column already exists or migration failed", e);
+            }
+        }
+        if (oldVersion < 1) {
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_CLAIMS);
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_FOUND_ITEMS);
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOST_ITEMS);
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
+            onCreate(db);
+        }
     }
 
     // =========================================================================
@@ -323,6 +335,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put(COL_LOCATION_FOUND, item.getLocation().trim());
         values.put(COL_DATE_FOUND, item.getDate().trim());
         values.put(COL_STATUS, item.getStatus() != null ? item.getStatus() : "Active");
+        values.put(COL_PHOTO_PATH, item.getPhotoPath() != null ? item.getPhotoPath() : "");
         return db.insert(TABLE_FOUND_ITEMS, null, values);
     }
 
@@ -405,6 +418,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         item.setLocation(cursor.getString(cursor.getColumnIndexOrThrow(COL_LOCATION_FOUND)));
         item.setDate(cursor.getString(cursor.getColumnIndexOrThrow(COL_DATE_FOUND)));
         item.setStatus(cursor.getString(cursor.getColumnIndexOrThrow(COL_STATUS)));
+        int photoCol = cursor.getColumnIndex(COL_PHOTO_PATH);
+        if (photoCol != -1) item.setPhotoPath(cursor.getString(photoCol));
         item.setReporterName(cursor.getString(cursor.getColumnIndexOrThrow(COL_USER_NAME)));
         item.setReporterRollNo(cursor.getString(cursor.getColumnIndexOrThrow(COL_ROLL_NO)));
         item.setReporterEmail(cursor.getString(cursor.getColumnIndexOrThrow(COL_EMAIL)));

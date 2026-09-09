@@ -12,6 +12,7 @@ public class Item implements Serializable {
     private String location; // location_lost or location_found
     private String date;     // date_lost or date_found
     private String status;   // "Active", "Matched", "Returned"
+    private String photoPath; // local file path for Found item photo
 
     // Optional reporter details fetched via JOIN
     private String reporterName;
@@ -128,5 +129,13 @@ public class Item implements Serializable {
 
     public void setReporterRollNo(String reporterRollNo) {
         this.reporterRollNo = reporterRollNo;
+    }
+
+    public String getPhotoPath() {
+        return photoPath;
+    }
+
+    public void setPhotoPath(String photoPath) {
+        this.photoPath = photoPath;
     }
 }

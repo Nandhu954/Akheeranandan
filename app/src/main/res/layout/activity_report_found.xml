@@ -9,7 +9,6 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
-
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbarReportFound"
             android:layout_width="match_parent"
@@ -49,6 +48,151 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
+            <!-- ============================================================ -->
+            <!-- MANDATORY PHOTO SECTION                                      -->
+            <!-- ============================================================ -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="3dp"
+                app:strokeWidth="2dp"
+                app:strokeColor="@color/accent"
+                app:cardBackgroundColor="@color/surface">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <!-- Header -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="📷  Photo of Found Item"
+                            android:textColor="@color/primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <!-- Required badge -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="REQUIRED"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:background="@drawable/badge_active" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Take or choose a photo so the owner can verify the item before meeting"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <!-- Photo Preview (hidden until photo selected) -->
+                    <ImageView
+                        android:id="@+id/ivPhotoPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="200dp"
+                        android:layout_marginTop="12dp"
+                        android:scaleType="centerCrop"
+                        android:background="@color/surface_variant"
+                        android:visibility="gone"
+                        android:contentDescription="Photo preview" />
+
+                    <!-- Photo placeholder (shown when no photo) -->
+                    <LinearLayout
+                        android:id="@+id/layoutPhotoPlaceholder"
+                        android:layout_width="match_parent"
+                        android:layout_height="120dp"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="@color/surface_variant">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📷"
+                            android:textSize="40sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="No photo selected"
+                            android:textColor="@color/text_hint"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <!-- Error text for photo validation -->
+                    <TextView
+                        android:id="@+id/tvPhotoError"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="⚠ A photo is required to submit a found report"
+                        android:textColor="#E53935"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+
+                    <!-- Photo picker buttons -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTakePhoto"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="Take Photo"
+                            android:textSize="13sp"
+                            android:textAllCaps="false"
+                            app:cornerRadius="10dp"
+                            app:backgroundTint="@color/primary"
+                            android:textColor="@color/text_white" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnChooseGallery"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:text="From Gallery"
+                            android:textSize="13sp"
+                            android:textAllCaps="false"
+                            app:cornerRadius="10dp"
+                            app:backgroundTint="@color/accent"
+                            android:textColor="@color/text_white" />
+                    </LinearLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ============================================================ -->
+            <!-- ITEM DETAILS FORM                                            -->
+            <!-- ============================================================ -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -72,7 +216,6 @@
                         android:layout_height="wrap_content"
                         android:hint="Item Name (e.g., Casio Calculator, Student ID)"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etItemName"
                             android:layout_width="match_parent"
@@ -81,7 +224,7 @@
                             android:textColor="@color/text_primary" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Category Spinner Dropdown -->
+                    <!-- Category -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilCategory"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
@@ -89,7 +232,6 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
                         android:hint="Category">
-
                         <AutoCompleteTextView
                             android:id="@+id/actvCategory"
                             android:layout_width="match_parent"
@@ -108,7 +250,6 @@
                         app:startIconDrawable="@drawable/ic_location"
                         app:startIconTint="@color/primary"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etLocation"
                             android:layout_width="match_parent"
@@ -127,7 +268,6 @@
                         app:startIconDrawable="@drawable/ic_calendar"
                         app:startIconTint="@color/primary"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etDate"
                             android:layout_width="match_parent"
@@ -146,7 +286,6 @@
                         android:layout_marginTop="14dp"
                         android:hint="Description &amp; Handover Location (e.g., Left at Guard Desk)"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/etDescription"
                             android:layout_width="match_parent"

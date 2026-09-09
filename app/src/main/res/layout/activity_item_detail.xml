@@ -225,6 +225,52 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Found Item Photo Card (visible only for Found items with photo) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardItemPhoto"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:visibility="gone"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="2dp"
+                app:strokeWidth="2dp"
+                app:strokeColor="@color/accent"
+                app:cardBackgroundColor="@color/surface">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📷  Photo of Found Item"
+                        android:textColor="@color/primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="10dp"
+                        android:text="Verify this is your item before contacting the finder"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <ImageView
+                        android:id="@+id/ivItemPhoto"
+                        android:layout_width="match_parent"
+                        android:layout_height="220dp"
+                        android:scaleType="centerCrop"
+                        android:background="@color/surface_variant"
+                        android:contentDescription="Found item photo" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Reporter Card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardReporterInfo"
