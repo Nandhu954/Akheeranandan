@@ -118,17 +118,27 @@ public class ScanQRActivity extends AppCompatActivity {
         if (isProcessing) return;
         isProcessing = true;
 
+        String trimmed = payload.trim().toUpperCase();
+
+        // ── Route 1: Owner Verification Code (CF-XXXXXX) ──────────────────
+        if (trimmed.startsWith("CF-") && trimmed.length() <= 12) {
+            processOwnerVerificationCode(trimmed);
+            return;
+        }
+
+        // ── Route 2: Claim QR (existing system) ───────────────────────────
         Claim claim = dbHelper.getClaimByQrPayload(payload);
 
         if (claim == null) {
-            showResultDialog("Invalid QR Code",
-                    "No matching claim was found for payload:\n\n" + payload,
+            showResultDialog("❌ Invalid QR Code",
+                    "No matching claim or owner code found for:\n\n" + payload
+                    + "\n\nMake sure the owner shows their Owner Verification QR from their Lost Report.",
                     false);
             return;
         }
 
         if ("Returned".equalsIgnoreCase(claim.getClaimStatus())) {
-            showResultDialog("Already Returned",
+            showResultDialog("✅ Already Returned",
                     "This item has already been verified and returned to "
                             + (claim.getClaimerName() != null ? claim.getClaimerName() : "the claimant")
                             + ".\n\nItem: " + (claim.getItemName() != null ? claim.getItemName() : "N/A"),
@@ -136,11 +146,10 @@ public class ScanQRActivity extends AppCompatActivity {
             return;
         }
 
-        // Perform atomic update in Database
         boolean success = dbHelper.verifyAndCompleteHandover(payload);
         if (success) {
-            String itemName = claim.getItemName() != null ? claim.getItemName() : "Campus Item";
-            String studentName = claim.getClaimerName() != null ? claim.getClaimerName() : "Student";
+            String itemName   = claim.getItemName()     != null ? claim.getItemName()     : "Campus Item";
+            String studentName = claim.getClaimerName() != null ? claim.getClaimerName()  : "Student";
             String studentRoll = claim.getClaimerRollNo() != null ? claim.getClaimerRollNo() : "--";
             String studentEmail = claim.getClaimerEmail() != null ? claim.getClaimerEmail() : "--";
 
@@ -149,14 +158,79 @@ public class ScanQRActivity extends AppCompatActivity {
                     + "• Claimed by: " + studentName + "\n"
                     + "• Roll No: " + studentRoll + "\n"
                     + "• Email: " + studentEmail + "\n\n"
-                    + "Status for both Claim and Item has been updated to 'Returned'.";
+                    + "Both Claim and Item status updated to 'Returned'.";
 
-            showResultDialog("Handover Verified Successfully!", message, true);
+            showResultDialog("🎉 Handover Verified!", message, true);
         } else {
-            showResultDialog("Handover Failed",
-                    "Could not complete the handover transaction. Please check database logs.",
+            showResultDialog("❌ Handover Failed",
+                    "Could not complete the handover. Please try again.",
                     false);
         }
+    }
+
+    /**
+     * Handle Owner Verification Code (CF-XXXXXX).
+     * The finder scans the lost item owner's QR → confirms they are the real owner → marks item Returned.
+     */
+    private void processOwnerVerificationCode(String ownerCode) {
+        com.campusfind.app.models.Item lostItem = dbHelper.getLostItemByOwnerCode(ownerCode);
+
+        if (lostItem == null) {
+            showResultDialog("❌ Code Not Found",
+                    "No lost item report was found for owner code:\n\n" + ownerCode
+                    + "\n\nAsk the owner to show you the QR from their CampusFind app (My Reports).",
+                    false);
+            return;
+        }
+
+        if ("Returned".equalsIgnoreCase(lostItem.getStatus())) {
+            showResultDialog("✅ Already Returned",
+                    "This item has already been marked as returned.\n\n"
+                    + "Item: " + lostItem.getItemName(),
+                    false);
+            return;
+        }
+
+        // Build confirmation message for the finder
+        String ownerName  = lostItem.getReporterName()  != null ? lostItem.getReporterName()  : "Unknown";
+        String ownerRoll  = lostItem.getReporterRollNo() != null ? lostItem.getReporterRollNo() : "--";
+        String ownerEmail = lostItem.getReporterEmail()  != null ? lostItem.getReporterEmail()  : "--";
+
+        String confirmMsg = "✅ Owner Identity Verified!\n\n"
+                + "This person is the REAL owner of:\n"
+                + "• Item: " + lostItem.getItemName() + "\n"
+                + "• Category: " + lostItem.getCategory() + "\n"
+                + "• Lost at: " + lostItem.getLocation() + "\n"
+                + "• Date: " + lostItem.getDate() + "\n\n"
+                + "Owner:\n"
+                + "• Name: " + ownerName + "\n"
+                + "• Roll No: " + ownerRoll + "\n"
+                + "• Email: " + ownerEmail + "\n\n"
+                + "Hand over the item and tap 'Complete Handover' to finish.";
+
+        // Show confirm dialog before marking complete
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("🔐 Owner Verified!")
+                .setMessage(confirmMsg)
+                .setCancelable(false)
+                .setPositiveButton("✅ Complete Handover", (dialog, which) -> {
+                    boolean done = dbHelper.completeOwnerHandover(ownerCode);
+                    if (done) {
+                        showResultDialog("🎉 Handover Complete!",
+                                "The item \"" + lostItem.getItemName() + "\" has been\n"
+                                + "successfully returned to " + ownerName + ".\n\n"
+                                + "Status updated to Returned. Thank you! 🙏",
+                                true);
+                    } else {
+                        showResultDialog("❌ Update Failed",
+                                "Could not update status. Please try again.", false);
+                    }
+                })
+                .setNegativeButton("⚠️ Cancel — Wrong Person", (dialog, which) -> {
+                    isProcessing = false;
+                    Toast.makeText(this, "Handover cancelled. Do NOT give the item.", Toast.LENGTH_LONG).show();
+                })
+                .show();
     }
 
     private void showResultDialog(String title, String message, boolean isSuccess) {

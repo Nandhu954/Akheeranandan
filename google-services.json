@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "266752175257",
+    "project_id": "canpusfind",
+    "storage_bucket": "canpusfind.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:266752175257:android:dbcd2d7d78c1253644dc08",
+        "android_client_info": {
+          "package_name": "com.campusfind.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlGE-FRuT3uoA1N1CwJU60IOYxvpmlI-E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

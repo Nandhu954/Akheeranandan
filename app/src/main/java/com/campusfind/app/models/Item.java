@@ -13,6 +13,7 @@ public class Item implements Serializable {
     private String date;     // date_lost or date_found
     private String status;   // "Active", "Matched", "Returned"
     private String photoPath; // local file path for Found item photo
+    private String ownerCode; // unique CF-XXXX code for Lost item safe handover
 
     // Optional reporter details fetched via JOIN
     private String reporterName;
@@ -137,5 +138,13 @@ public class Item implements Serializable {
 
     public void setPhotoPath(String photoPath) {
         this.photoPath = photoPath;
+    }
+
+    public String getOwnerCode() {
+        return ownerCode;
+    }
+
+    public void setOwnerCode(String ownerCode) {
+        this.ownerCode = ownerCode;
     }
 }

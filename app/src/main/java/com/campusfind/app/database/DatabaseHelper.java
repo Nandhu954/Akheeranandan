@@ -18,7 +18,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String TAG = "DatabaseHelper";
     private static final String DATABASE_NAME = "CampusFind.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
 
     // Table Names
     public static final String TABLE_USERS = "Users";
@@ -54,6 +54,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static final String COL_QR_PAYLOAD = "qr_payload";
     public static final String COL_CLAIM_STATUS = "claim_status";
     public static final String COL_PHOTO_PATH = "photo_path";
+    public static final String COL_OWNER_CODE = "owner_code";
 
     // Create Table Statements
     private static final String CREATE_TABLE_USERS = "CREATE TABLE " + TABLE_USERS + " ("
@@ -73,6 +74,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             + COL_LOCATION_LOST + " TEXT NOT NULL, "
             + COL_DATE_LOST + " TEXT NOT NULL, "
             + COL_STATUS + " TEXT DEFAULT 'Active', "
+            + COL_OWNER_CODE + " TEXT UNIQUE, "
             + "FOREIGN KEY(" + COL_USER_ID + ") REFERENCES " + TABLE_USERS + "(" + COL_USER_ID + ") ON DELETE CASCADE"
             + ");";
 
@@ -129,11 +131,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
-            // Migration: add photo_path column to FoundItems (preserves all existing data)
             try {
                 db.execSQL("ALTER TABLE " + TABLE_FOUND_ITEMS + " ADD COLUMN " + COL_PHOTO_PATH + " TEXT");
             } catch (Exception e) {
-                Log.w(TAG, "photo_path column already exists or migration failed", e);
+                Log.w(TAG, "photo_path migration failed", e);
+            }
+        }
+        if (oldVersion < 3) {
+            // Migration: add owner_code column to LostItems (preserves all existing data)
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_LOST_ITEMS + " ADD COLUMN " + COL_OWNER_CODE + " TEXT");
+            } catch (Exception e) {
+                Log.w(TAG, "owner_code migration failed", e);
             }
         }
         if (oldVersion < 1) {
@@ -222,8 +231,26 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // LOST ITEMS OPERATIONS
     // =========================================================================
 
+    /**
+     * Generate a unique owner verification code, e.g. "CF-A3K9PL"
+     */
+    private String generateOwnerCode() {
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+        StringBuilder sb = new StringBuilder("CF-");
+        java.util.Random rnd = new java.util.Random();
+        for (int i = 0; i < 6; i++) sb.append(chars.charAt(rnd.nextInt(chars.length())));
+        return sb.toString();
+    }
+
     public long addLostItem(Item item) {
         SQLiteDatabase db = this.getWritableDatabase();
+
+        // Generate unique owner code
+        String ownerCode;
+        do {
+            ownerCode = generateOwnerCode();
+        } while (getLostItemByOwnerCodeInternal(db, ownerCode) != null);
+
         ContentValues values = new ContentValues();
         values.put(COL_USER_ID, item.getUserId());
         values.put(COL_ITEM_NAME, item.getItemName().trim());
@@ -232,7 +259,45 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put(COL_LOCATION_LOST, item.getLocation().trim());
         values.put(COL_DATE_LOST, item.getDate().trim());
         values.put(COL_STATUS, item.getStatus() != null ? item.getStatus() : "Active");
-        return db.insert(TABLE_LOST_ITEMS, null, values);
+        values.put(COL_OWNER_CODE, ownerCode);
+        long id = db.insert(TABLE_LOST_ITEMS, null, values);
+        if (id > 0) item.setOwnerCode(ownerCode);
+        return id;
+    }
+
+    /** Lookup a lost item by its owner verification code (internal, takes open DB). */
+    private Item getLostItemByOwnerCodeInternal(SQLiteDatabase db, String code) {
+        if (code == null || code.isEmpty()) return null;
+        Cursor cursor = db.rawQuery(
+                "SELECT l.*, u." + COL_USER_NAME + ", u." + COL_ROLL_NO + ", u." + COL_EMAIL
+                + " FROM " + TABLE_LOST_ITEMS + " l"
+                + " LEFT JOIN " + TABLE_USERS + " u ON l." + COL_USER_ID + " = u." + COL_USER_ID
+                + " WHERE l." + COL_OWNER_CODE + " = ?",
+                new String[]{code.trim().toUpperCase()});
+        Item item = null;
+        if (cursor != null && cursor.moveToFirst()) {
+            item = cursorToLostItem(cursor);
+            cursor.close();
+        }
+        return item;
+    }
+
+    /** Public: look up a lost item by its owner verification code. */
+    public Item getLostItemByOwnerCode(String code) {
+        return getLostItemByOwnerCodeInternal(this.getReadableDatabase(), code);
+    }
+
+    /**
+     * Complete a Safe Handover by owner code:
+     * marks the lost item status as "Returned".
+     */
+    public boolean completeOwnerHandover(String ownerCode) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_STATUS, "Returned");
+        int rows = db.update(TABLE_LOST_ITEMS, values,
+                COL_OWNER_CODE + " = ?", new String[]{ownerCode.trim().toUpperCase()});
+        return rows > 0;
     }
 
     public List<Item> getLostItems(String query, String category) {
@@ -315,6 +380,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         item.setLocation(cursor.getString(cursor.getColumnIndexOrThrow(COL_LOCATION_LOST)));
         item.setDate(cursor.getString(cursor.getColumnIndexOrThrow(COL_DATE_LOST)));
         item.setStatus(cursor.getString(cursor.getColumnIndexOrThrow(COL_STATUS)));
+        int ownerCodeCol = cursor.getColumnIndex(COL_OWNER_CODE);
+        if (ownerCodeCol != -1) item.setOwnerCode(cursor.getString(ownerCodeCol));
         item.setReporterName(cursor.getString(cursor.getColumnIndexOrThrow(COL_USER_NAME)));
         item.setReporterRollNo(cursor.getString(cursor.getColumnIndexOrThrow(COL_ROLL_NO)));
         item.setReporterEmail(cursor.getString(cursor.getColumnIndexOrThrow(COL_EMAIL)));
