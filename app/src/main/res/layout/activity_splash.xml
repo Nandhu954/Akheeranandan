@@ -1,64 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background"
-    android:gravity="center">
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@drawable/bg_splash"
+    android:padding="32dp">
 
+    <!-- Logo -->
+    <ImageView
+        android:id="@+id/ivSplashLogo"
+        android:layout_width="130dp"
+        android:layout_height="130dp"
+        android:src="@drawable/ic_campusfind_logo"
+        android:scaleType="fitCenter"
+        android:contentDescription="CampusFind Logo" />
+
+    <!-- App Name -->
+    <TextView
+        android:id="@+id/tvSplashAppName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="CampusFind"
+        android:textColor="#FFFFFF"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif-medium"
+        android:alpha="0" />
+
+    <!-- Tagline -->
+    <TextView
+        android:id="@+id/tvSplashTagline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="FIND LOST. RETURN FOUND."
+        android:textColor="#F47920"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.2"
+        android:alpha="0" />
+
+    <!-- Loading dots -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
-        android:orientation="vertical"
-        android:padding="24dp">
+        android:layout_marginTop="60dp"
+        android:orientation="horizontal"
+        android:gravity="center">
 
-        <ImageView
-            android:id="@+id/ivSplashLogo"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:contentDescription="@string/app_name"
-            android:src="@drawable/ic_campusfind_logo" />
-
-        <TextView
-            android:id="@+id/tvSplashAppName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:fontFamily="sans-serif-black"
-            android:text="@string/app_name"
-            android:textColor="@color/primary"
-            android:textSize="32sp"
-            android:letterSpacing="0.05" />
-
-        <TextView
-            android:id="@+id/tvSplashTagline"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="sans-serif-medium"
-            android:text="@string/app_tagline"
-            android:textColor="@color/accent"
-            android:textSize="16sp"
-            android:letterSpacing="0.03" />
-
-        <ProgressBar
-            android:id="@+id/progressBarSplash"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:layout_marginTop="48dp"
-            android:indeterminateTint="@color/accent" />
-
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_margin="3dp"
+            android:background="#80F47920"
+            android:backgroundTint="#80F47920" />
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_margin="3dp"
+            android:background="#B0F47920"
+            android:backgroundTint="#B0F47920" />
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_margin="3dp"
+            android:background="#F47920"
+            android:backgroundTint="#F47920" />
     </LinearLayout>
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="24dp"
-        android:text="University Campus Management"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp" />
-
-</RelativeLayout>
+</LinearLayout>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:opacity="opaque">
+
+    <!-- Deep navy gradient background -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#1B3A6B"
+                android:endColor="#0f1f3d"
+                android:angle="135"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <!-- Centered logo -->
+    <item
+        android:width="140dp"
+        android:height="140dp"
+        android:gravity="center"
+        android:drawable="@drawable/ic_campusfind_logo" />
+
+</layer-list>
