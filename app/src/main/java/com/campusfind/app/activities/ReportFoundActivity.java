@@ -38,6 +38,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
@@ -289,15 +290,64 @@ public class ReportFoundActivity extends AppCompatActivity {
         foundItem.setReporterRollNo(sessionManager.getUserRollNo());
         foundItem.setItemId((int) id);
 
-        // ✅ Sync to Firestore — makes this report visible on ALL devices
-        FirestoreHelper.getInstance().saveFoundItem(foundItem, null);
+        // Disable button while we save + run matching (prevents double-submit)
+        btnSubmitFound.setEnabled(false);
+        btnSubmitFound.setText("Checking for matches…");
 
-        // --- Run smart matching ---
+        // ✅ Step 1: Sync to Firestore — makes this report visible on ALL devices
+        FirestoreHelper.getInstance().saveFoundItem(foundItem,
+                new FirestoreHelper.SaveCallback() {
+                    @Override
+                    public void onSuccess(String firestoreId) {
+                        // ✅ Step 2: Fetch ALL lost items from Firestore (cross-device)
+                        //            and run matching against them
+                        runCloudMatching(foundItem);
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        // Firestore unavailable — fall back to this device's lost items
+                        runLocalMatching(foundItem);
+                    }
+                });
+    }
+
+    /**
+     * Fetch ALL lost items from Firestore (every phone's reports) and match
+     * against the found item. This is the primary matching path.
+     */
+    private void runCloudMatching(Item foundItem) {
+        FirestoreHelper.getInstance().getLostItems(new FirestoreHelper.ItemsCallback() {
+            @Override
+            public void onSuccess(List<Item> lostItems) {
+                List<Item> matches = MatchingEngine.findMatches(foundItem, lostItems);
+                handleMatchResult(foundItem, matches);
+            }
+
+            @Override
+            public void onError(String message) {
+                // Cloud unavailable — fall back to local
+                runLocalMatching(foundItem);
+            }
+        });
+    }
+
+    /**
+     * Fallback: match against lost items stored only on this device's SQLite.
+     * Used when Firestore is unavailable (no internet).
+     */
+    private void runLocalMatching(Item foundItem) {
         List<Item> lostItems = dbHelper.getLostItems(null, null);
-        List<Item> matches = MatchingEngine.findMatches(foundItem, lostItems);
+        List<Item> matches = MatchingEngine.findMatches(
+                foundItem, lostItems != null ? lostItems : new ArrayList<>());
+        handleMatchResult(foundItem, matches);
+    }
 
+    /**
+     * Common handler — shows match dialog if matches found, else finishes.
+     */
+    private void handleMatchResult(Item foundItem, List<Item> matches) {
         if (!matches.isEmpty()) {
-            // Notify finder about match and offer to email owner
             showMatchDialog(foundItem, matches);
         } else {
             Toast.makeText(this, "Found item reported successfully!", Toast.LENGTH_LONG).show();
