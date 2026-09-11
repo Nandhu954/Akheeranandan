@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Item;
+import com.campusfind.app.utils.FirestoreHelper;
 import com.campusfind.app.utils.QRCodeHelper;
 import com.campusfind.app.utils.SessionManager;
 import com.google.android.material.appbar.MaterialToolbar;
@@ -137,6 +138,14 @@ public class ReportLostActivity extends AppCompatActivity {
 
         long id = dbHelper.addLostItem(lostItem);
         if (id > 0) {
+            // Attach reporter details so other users can see who to contact
+            lostItem.setReporterName(sessionManager.getUserName());
+            lostItem.setReporterEmail(sessionManager.getUserEmail());
+            lostItem.setReporterRollNo(sessionManager.getUserRollNo());
+
+            // ✅ Sync to Firestore — makes this report visible on ALL devices
+            FirestoreHelper.getInstance().saveLostItem(lostItem, null);
+
             // Show owner QR dialog so the user can save their verification code
             showOwnerQRDialog(lostItem);
         } else {

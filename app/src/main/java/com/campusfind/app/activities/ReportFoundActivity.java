@@ -27,6 +27,7 @@ import androidx.core.content.FileProvider;
 import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Item;
+import com.campusfind.app.utils.FirestoreHelper;
 import com.campusfind.app.utils.MatchingEngine;
 import com.campusfind.app.utils.SessionManager;
 import com.google.android.material.appbar.MaterialToolbar;
@@ -282,8 +283,16 @@ public class ReportFoundActivity extends AppCompatActivity {
             return;
         }
 
-        // --- Run smart matching ---
+        // Attach reporter details so owner knows who found the item
+        foundItem.setReporterName(sessionManager.getUserName());
+        foundItem.setReporterEmail(sessionManager.getUserEmail());
+        foundItem.setReporterRollNo(sessionManager.getUserRollNo());
         foundItem.setItemId((int) id);
+
+        // ✅ Sync to Firestore — makes this report visible on ALL devices
+        FirestoreHelper.getInstance().saveFoundItem(foundItem, null);
+
+        // --- Run smart matching ---
         List<Item> lostItems = dbHelper.getLostItems(null, null);
         List<Item> matches = MatchingEngine.findMatches(foundItem, lostItems);
 
