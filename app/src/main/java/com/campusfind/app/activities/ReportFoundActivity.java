@@ -38,7 +38,6 @@ import com.google.android.material.textfield.TextInputLayout;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
@@ -290,92 +289,69 @@ public class ReportFoundActivity extends AppCompatActivity {
         foundItem.setReporterRollNo(sessionManager.getUserRollNo());
         foundItem.setItemId((int) id);
 
-        // Disable button while we save + run matching (prevents double-submit)
-        btnSubmitFound.setEnabled(false);
-        btnSubmitFound.setText("Checking for matches…");
+        // ✅ Sync to Firestore — makes this report visible on ALL devices
+        FirestoreHelper.getInstance().saveFoundItem(foundItem, null);
 
-        // ✅ Step 1: Sync to Firestore — makes this report visible on ALL devices
-        FirestoreHelper.getInstance().saveFoundItem(foundItem,
-                new FirestoreHelper.SaveCallback() {
-                    @Override
-                    public void onSuccess(String firestoreId) {
-                        // ✅ Step 2: Fetch ALL lost items from Firestore (cross-device)
-                        //            and run matching against them
-                        runCloudMatching(foundItem);
-                    }
+        // --- Run smart matching against ALL lost items from Firestore (cross-device) ---
+        Toast.makeText(this, "Report submitted! Checking for matches...", Toast.LENGTH_SHORT).show();
 
-                    @Override
-                    public void onError(String message) {
-                        // Firestore unavailable — fall back to this device's lost items
-                        runLocalMatching(foundItem);
-                    }
-                });
-    }
-
-    /**
-     * Fetch ALL lost items from Firestore (every phone's reports) and match
-     * against the found item. This is the primary matching path.
-     */
-    private void runCloudMatching(Item foundItem) {
         FirestoreHelper.getInstance().getLostItems(new FirestoreHelper.ItemsCallback() {
             @Override
-            public void onSuccess(List<Item> lostItems) {
-                List<Item> matches = MatchingEngine.findMatches(foundItem, lostItems);
-                handleMatchResult(foundItem, matches);
+            public void onSuccess(List<Item> allLostItems) {
+                List<Item> matches = MatchingEngine.findMatches(foundItem, allLostItems);
+                if (!matches.isEmpty()) {
+                    // Auto-notify: open Gmail immediately — no "Skip" option
+                    autoSendMatchNotification(foundItem, matches);
+                } else {
+                    Toast.makeText(ReportFoundActivity.this,
+                            "Found item reported! No matches yet.", Toast.LENGTH_LONG).show();
+                    finish();
+                }
             }
 
             @Override
             public void onError(String message) {
-                // Cloud unavailable — fall back to local
-                runLocalMatching(foundItem);
+                // Firestore unavailable — fall back to local SQLite matches
+                List<Item> localLost = dbHelper.getLostItems(null, null);
+                List<Item> matches   = MatchingEngine.findMatches(foundItem, localLost);
+                if (!matches.isEmpty()) {
+                    autoSendMatchNotification(foundItem, matches);
+                } else {
+                    Toast.makeText(ReportFoundActivity.this,
+                            "Found item reported successfully!", Toast.LENGTH_LONG).show();
+                    finish();
+                }
             }
         });
-    }
-
-    /**
-     * Fallback: match against lost items stored only on this device's SQLite.
-     * Used when Firestore is unavailable (no internet).
-     */
-    private void runLocalMatching(Item foundItem) {
-        List<Item> lostItems = dbHelper.getLostItems(null, null);
-        List<Item> matches = MatchingEngine.findMatches(
-                foundItem, lostItems != null ? lostItems : new ArrayList<>());
-        handleMatchResult(foundItem, matches);
-    }
-
-    /**
-     * Common handler — shows match dialog if matches found, else finishes.
-     */
-    private void handleMatchResult(Item foundItem, List<Item> matches) {
-        if (!matches.isEmpty()) {
-            showMatchDialog(foundItem, matches);
-        } else {
-            Toast.makeText(this, "Found item reported successfully!", Toast.LENGTH_LONG).show();
-            finish();
-        }
     }
 
     // -----------------------------------------------------------------------
     // Match notification dialog
     // -----------------------------------------------------------------------
 
-    private void showMatchDialog(Item foundItem, List<Item> matches) {
-        Item bestMatch = matches.get(0); // most likely match
+    // -----------------------------------------------------------------------
+    // Automatic match notification — fires without asking the finder
+    // -----------------------------------------------------------------------
 
+    /**
+     * Called when a found item scores ≥ 2 against one or more lost items.
+     * Shows an info dialog and immediately opens Gmail with the notification pre-filled.
+     * The finder CANNOT skip — the owner must be notified.
+     */
+    private void autoSendMatchNotification(Item foundItem, List<Item> matches) {
+        Item bestMatch = matches.get(0);
         String ownerEmail = bestMatch.getReporterEmail() != null ? bestMatch.getReporterEmail() : "";
         String ownerName  = bestMatch.getReporterName()  != null ? bestMatch.getReporterName()  : "the owner";
 
         new AlertDialog.Builder(this)
-                .setTitle("🎯 Possible Match Found!")
-                .setMessage("Your found item may match a lost report by " + ownerName +
-                        " for \"" + bestMatch.getItemName() + "\" at " + bestMatch.getLocation() +
-                        ".\n\nWould you like to send them an email notification?")
-                .setPositiveButton("📧 Send Email", (dialog, which) -> {
+                .setTitle("🎯 Match Found! Notifying Owner...")
+                .setMessage("Your found item matches a lost report by " + ownerName
+                        + " for \"" + bestMatch.getItemName() + "\" "
+                        + "at " + bestMatch.getLocation() + ".\n\n"
+                        + "📧 Gmail will open automatically to notify the owner.\n"
+                        + "Please tap SEND to complete the notification.")
+                .setPositiveButton("📧 Open Gmail & Notify", (dialog, which) -> {
                     sendMatchEmail(ownerEmail, ownerName, bestMatch, foundItem);
-                })
-                .setNegativeButton("Skip", (dialog, which) -> {
-                    Toast.makeText(this, "Found item reported successfully!", Toast.LENGTH_LONG).show();
-                    finish();
                 })
                 .setCancelable(false)
                 .show();
@@ -383,39 +359,43 @@ public class ReportFoundActivity extends AppCompatActivity {
 
     /**
      * Opens Gmail (or any email app) with a pre-filled match notification email.
-     * This is the standard Android approach — no backend/API key needed.
+     * Uses Android's standard Gmail Intent — no backend or API key needed.
      */
     private void sendMatchEmail(String toEmail, String ownerName, Item lostItem, Item foundItem) {
-        String subject = "CampusFind: Possible Match for Your Lost " + lostItem.getItemName();
+        String subject = "CampusFind: Someone Found Your Lost " + lostItem.getItemName() + "!";
         String body = "Hi " + ownerName + ",\n\n"
                 + "Great news! Someone on campus has reported finding an item that may be yours.\n\n"
                 + "🔍 Your Lost Item:\n"
-                + "  Item: " + lostItem.getItemName() + "\n"
-                + "  Category: " + lostItem.getCategory() + "\n"
-                + "  Location Lost: " + lostItem.getLocation() + "\n"
-                + "  Date: " + lostItem.getDate() + "\n\n"
+                + "  Item: "          + lostItem.getItemName()  + "\n"
+                + "  Category: "      + lostItem.getCategory()  + "\n"
+                + "  Location Lost: " + lostItem.getLocation()  + "\n"
+                + "  Date: "          + lostItem.getDate()      + "\n\n"
                 + "📦 Found Item Report:\n"
-                + "  Item Found: " + foundItem.getItemName() + "\n"
-                + "  Category: " + foundItem.getCategory() + "\n"
-                + "  Location Found: " + foundItem.getLocation() + "\n"
-                + "  Date Found: " + foundItem.getDate() + "\n\n"
-                + "Please open the CampusFind app and check the Search section to view the\n"
-                + "found item photo and contact the finder.\n\n"
+                + "  Item Found: "      + foundItem.getItemName() + "\n"
+                + "  Category: "        + foundItem.getCategory() + "\n"
+                + "  Location Found: "  + foundItem.getLocation() + "\n"
+                + "  Date Found: "      + foundItem.getDate()     + "\n"
+                + "  Reported by: "     + foundItem.getReporterName()
+                +  " (" + foundItem.getReporterRollNo() + ")\n\n"
+                + "👉 Open CampusFind → Search Items → Found tab to see the photo.\n\n"
+                + "To collect your item safely, show your OWNER QR CODE to the finder.\n\n"
                 + "— CampusFind App\nFind Lost. Return Found.";
 
         Intent emailIntent = new Intent(Intent.ACTION_SENDTO);
         emailIntent.setData(Uri.parse("mailto:"));
-        emailIntent.putExtra(Intent.EXTRA_EMAIL, new String[]{toEmail});
+        emailIntent.putExtra(Intent.EXTRA_EMAIL,   new String[]{toEmail});
         emailIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
-        emailIntent.putExtra(Intent.EXTRA_TEXT, body);
+        emailIntent.putExtra(Intent.EXTRA_TEXT,    body);
 
         try {
-            startActivity(Intent.createChooser(emailIntent, "Send notification via..."));
+            startActivity(Intent.createChooser(emailIntent, "Notify owner via..."));
         } catch (Exception e) {
-            Toast.makeText(this, "No email app found. Please notify the owner manually.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this,
+                    "No email app found. Please contact owner manually: " + toEmail,
+                    Toast.LENGTH_LONG).show();
         }
 
-        Toast.makeText(this, "Found item reported successfully!", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "✅ Match reported! Owner notified.", Toast.LENGTH_SHORT).show();
         finish();
     }
 }
