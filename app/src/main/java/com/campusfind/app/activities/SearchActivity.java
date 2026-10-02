@@ -27,41 +27,56 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SearchActivity — shows Lost and Found items fetched from Firebase Firestore.
+ * SearchActivity — searches Lost and Found items from Firebase Firestore.
  *
- * All users on all devices report into Firestore, so every student can see
- * every report in real-time regardless of which phone submitted it.
+ * ════════════════════════════════════════════════════════════════
+ * KEY DESIGN DECISIONS:
  *
- * Flow:
- *   fetchFromCloud()  — one Firestore read, fills cachedItems
- *   applyFilters()    — client-side text/category filter on cachedItems → shows in RecyclerView
+ *  1. BOTH collections are fetched on load (lost_items + found_items).
+ *     This means a single swipe-to-refresh loads everything.
  *
- * fetchFromCloud is called on: onCreate, onResume, tab change, swipe-to-refresh.
- * applyFilters  is called on: search query change, category change (no new Firestore read needed).
+ *  2. BROWSE mode (no query): show only the selected tab's items.
+ *  3. SEARCH mode (query typed): show results from BOTH collections.
+ *     → User A searching "ID Card" will see Found items even if
+ *       they're on the "Lost" tab.
+ *
+ *  4. Keyword matching: OR logic per word.
+ *     "College ID" → tokens ["college","id"] → "id card" contains "id" → MATCH ✓
+ *     "Block 1"    → tokens ["block","1"]   → location "block 1" matches → MATCH ✓
+ *
+ *  5. Empty state is hidden during loading — never shows "No results"
+ *     before data arrives.
+ * ════════════════════════════════════════════════════════════════
  */
 public class SearchActivity extends AppCompatActivity {
 
-    private MaterialToolbar toolbar;
-    private TextInputEditText etSearchQuery;
-    private AutoCompleteTextView actvFilterCategory;
-    private TabLayout tabLayoutItemType;
-    private SwipeRefreshLayout swipeRefresh;
-    private RecyclerView rvSearchResults;
-    private LinearLayout layoutEmptyState;
+    // ─── Views ───────────────────────────────────────────────────────────────
+    private MaterialToolbar       toolbar;
+    private TextInputEditText     etSearchQuery;
+    private AutoCompleteTextView  actvFilterCategory;
+    private TabLayout             tabLayoutItemType;
+    private SwipeRefreshLayout    swipeRefresh;
+    private RecyclerView          rvSearchResults;
+    private LinearLayout          layoutEmptyState;
 
     private ItemAdapter adapter;
 
-    /** All items currently shown in the list (after filtering). */
-    private final List<Item> itemList = new ArrayList<>();
+    // ─── Data caches (both collections loaded once, filtered client-side) ────
+    private final List<Item> allLostItems  = new ArrayList<>();   // from lost_items
+    private final List<Item> allFoundItems = new ArrayList<>();   // from found_items
+    private final List<Item> displayList   = new ArrayList<>();   // shown in RecyclerView
 
-    /** Raw items fetched from Firestore — filtering is applied on top of this. */
-    private final List<Item> cachedItems = new ArrayList<>();
+    // ─── State ───────────────────────────────────────────────────────────────
+    private boolean isLostTab       = true;
+    private boolean isFetchingLost  = false;   // true while Firestore call in progress
+    private boolean isFetchingFound = false;
+    private boolean initialLoadDone = false;   // becomes true after first successful fetch
+    private String  selectedCategory = "All Categories";
+    private String  currentQuery     = "";
 
-    private boolean isLostTab = true;
-    private String selectedCategory = "All Categories";
-    private String currentQuery = "";
-
-    // ─── Lifecycle ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Lifecycle
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,26 +91,31 @@ public class SearchActivity extends AppCompatActivity {
         setupSearchInput();
         setupSwipeRefresh();
 
-        fetchFromCloud();
+        // Hide empty state initially — data hasn't loaded yet
+        layoutEmptyState.setVisibility(View.GONE);
+
+        fetchBothCollections();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // Refresh from cloud every time user comes back to this screen
-        fetchFromCloud();
+        // Re-fetch when user navigates back (new reports may exist)
+        fetchBothCollections();
     }
 
-    // ─── View init ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // View setup
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void initViews() {
-        toolbar              = findViewById(R.id.toolbarSearch);
-        etSearchQuery        = findViewById(R.id.etSearchQuery);
-        actvFilterCategory   = findViewById(R.id.actvFilterCategory);
-        tabLayoutItemType    = findViewById(R.id.tabLayoutItemType);
-        swipeRefresh         = findViewById(R.id.swipeRefreshSearch);
-        rvSearchResults      = findViewById(R.id.rvSearchResults);
-        layoutEmptyState     = findViewById(R.id.layoutEmptyState);
+        toolbar            = findViewById(R.id.toolbarSearch);
+        etSearchQuery      = findViewById(R.id.etSearchQuery);
+        actvFilterCategory = findViewById(R.id.actvFilterCategory);
+        tabLayoutItemType  = findViewById(R.id.tabLayoutItemType);
+        swipeRefresh       = findViewById(R.id.swipeRefreshSearch);
+        rvSearchResults    = findViewById(R.id.rvSearchResults);
+        layoutEmptyState   = findViewById(R.id.layoutEmptyState);
     }
 
     private void setupToolbar() {
@@ -111,8 +131,7 @@ public class SearchActivity extends AppCompatActivity {
 
         actvFilterCategory.setOnItemClickListener((parent, view, position, id) -> {
             selectedCategory = categories[position];
-            // No new Firestore read needed — just re-filter the cached data
-            applyFilters();
+            applyFilters(); // No Firestore read — filter cached data instantly
         });
     }
 
@@ -121,9 +140,7 @@ public class SearchActivity extends AppCompatActivity {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
                 isLostTab = (tab.getPosition() == 0);
-                // Different collection → need a fresh Firestore fetch
-                cachedItems.clear();
-                fetchFromCloud();
+                applyFilters(); // Both collections already cached — no new fetch needed
             }
             @Override public void onTabUnselected(TabLayout.Tab tab) {}
             @Override public void onTabReselected(TabLayout.Tab tab) {}
@@ -131,7 +148,7 @@ public class SearchActivity extends AppCompatActivity {
     }
 
     private void setupRecyclerView() {
-        adapter = new ItemAdapter(this, itemList, item -> {
+        adapter = new ItemAdapter(this, displayList, item -> {
             Intent intent = new Intent(SearchActivity.this, ItemDetailActivity.class);
             intent.putExtra("ITEM_EXTRA", item);
             startActivity(intent);
@@ -142,13 +159,13 @@ public class SearchActivity extends AppCompatActivity {
 
     private void setupSearchInput() {
         etSearchQuery.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
             @Override public void afterTextChanged(Editable s) {}
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 currentQuery = s.toString();
-                // Filter already-cached data — no new network call
+                // Filter cached data instantly — no network call needed
                 applyFilters();
             }
         });
@@ -156,93 +173,190 @@ public class SearchActivity extends AppCompatActivity {
 
     private void setupSwipeRefresh() {
         swipeRefresh.setColorSchemeResources(R.color.primary, R.color.accent);
-        swipeRefresh.setOnRefreshListener(this::fetchFromCloud);
+        swipeRefresh.setOnRefreshListener(this::fetchBothCollections);
     }
 
-    // ─── Data loading ──────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Data Loading — Firestore
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Fetch all items for the current tab from Firebase Firestore.
-     * On success the raw list is cached and then filtered + displayed.
+     * Fetches BOTH lost_items AND found_items from Firestore simultaneously.
+     *
+     * Both fetches run in parallel. When BOTH complete, applyFilters() is called.
+     * This ensures:
+     *   • Items from ALL users on ALL devices are visible
+     *   • Searching shows results from both Lost and Found without extra taps
+     *   • Tab switching is instant (no extra network call needed)
      */
-    private void fetchFromCloud() {
+    private void fetchBothCollections() {
         swipeRefresh.setRefreshing(true);
+        layoutEmptyState.setVisibility(View.GONE); // Never show "No results" while loading
 
-        FirestoreHelper.ItemsCallback callback = new FirestoreHelper.ItemsCallback() {
+        isFetchingLost  = true;
+        isFetchingFound = true;
+
+        // ── Fetch Lost items ──────────────────────────────────────────────────
+        FirestoreHelper.getInstance().getLostItems(new FirestoreHelper.ItemsCallback() {
             @Override
             public void onSuccess(List<Item> items) {
-                cachedItems.clear();
-                cachedItems.addAll(items);
-                applyFilters();
-                swipeRefresh.setRefreshing(false);
+                allLostItems.clear();
+                allLostItems.addAll(items);
+                isFetchingLost = false;
+                onFetchComplete();
             }
 
             @Override
             public void onError(String message) {
-                Toast.makeText(SearchActivity.this,
-                        "Could not load items. Check your internet connection.",
-                        Toast.LENGTH_SHORT).show();
-                swipeRefresh.setRefreshing(false);
-                // Show whatever we have cached (may be empty)
-                applyFilters();
+                // Network error — keep previously cached lost items
+                isFetchingLost = false;
+                onFetchComplete();
             }
-        };
+        });
 
-        if (isLostTab) {
-            FirestoreHelper.getInstance().getLostItems(callback);
-        } else {
-            FirestoreHelper.getInstance().getFoundItems(callback);
-        }
+        // ── Fetch Found items (in parallel) ───────────────────────────────────
+        FirestoreHelper.getInstance().getFoundItems(new FirestoreHelper.ItemsCallback() {
+            @Override
+            public void onSuccess(List<Item> items) {
+                allFoundItems.clear();
+                allFoundItems.addAll(items);
+                isFetchingFound = false;
+                onFetchComplete();
+            }
+
+            @Override
+            public void onError(String message) {
+                isFetchingFound = false;
+                onFetchComplete();
+            }
+        });
     }
 
     /**
-     * Filter cachedItems by current search query and category.
-     * No network call — runs instantly on cached data.
+     * Called each time one of the two Firestore fetches finishes.
+     * Only applies filters and stops the refresh indicator when BOTH are done.
+     */
+    private void onFetchComplete() {
+        if (isFetchingLost || isFetchingFound) {
+            return; // The other fetch is still running — wait for it
+        }
+
+        initialLoadDone = true;
+        applyFilters();
+        swipeRefresh.setRefreshing(false);
+
+        if (allLostItems.isEmpty() && allFoundItems.isEmpty() && initialLoadDone) {
+            Toast.makeText(this,
+                "Tip: If you see no items, check Firestore rules in Firebase Console.",
+                Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Filtering — runs entirely on cached data (no network)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Decides which items to show based on current tab, query, and category.
+     *
+     * ┌────────────────────────────────────────────────────────────────┐
+     * │ SEARCH mode (query typed):  show from BOTH Lost + Found        │
+     * │ BROWSE mode (no query):     show only the selected tab         │
+     * └────────────────────────────────────────────────────────────────┘
      */
     private void applyFilters() {
+        String q = currentQuery.trim().toLowerCase();
+
+        // Build the source list
+        List<Item> source = new ArrayList<>();
+        if (!q.isEmpty()) {
+            // SEARCH — include items from both collections
+            source.addAll(allLostItems);
+            source.addAll(allFoundItems);
+        } else {
+            // BROWSE — show only the selected tab
+            source.addAll(isLostTab ? allLostItems : allFoundItems);
+        }
+
+        // Filter source
         List<Item> filtered = new ArrayList<>();
-        for (Item item : cachedItems) {
-            if (passesFilters(item)) {
+        for (Item item : source) {
+            if (passesFilters(item, q)) {
                 filtered.add(item);
             }
         }
 
-        itemList.clear();
-        itemList.addAll(filtered);
-        adapter.updateList(itemList);
+        displayList.clear();
+        displayList.addAll(filtered);
+        adapter.updateList(displayList);
         updateEmptyState();
     }
 
-    /** Returns true if the item matches the current search query AND category. */
-    private boolean passesFilters(Item item) {
-        // Category filter
-        if (!selectedCategory.equals("All Categories")) {
-            if (item.getCategory() == null || !item.getCategory().equals(selectedCategory)) {
+    /**
+     * Returns true if the item passes the category filter AND keyword filter.
+     *
+     * Keyword matching: OR-logic per word.
+     *   Query "College ID" → tokens ["college","id"]
+     *   Item "ID Card"     → blob contains "id" → MATCH ✓
+     *
+     * Category: case-insensitive equality check.
+     */
+    private boolean passesFilters(Item item, String lowerQuery) {
+
+        // 1. Category filter (case-insensitive)
+        if (!selectedCategory.equalsIgnoreCase("All Categories")) {
+            String cat = safe(item.getCategory()).trim();
+            if (!cat.equalsIgnoreCase(selectedCategory.trim())) {
                 return false;
             }
         }
 
-        // Text search across name, description, location
-        if (!currentQuery.trim().isEmpty()) {
-            String q = currentQuery.trim().toLowerCase();
-            String name = item.getItemName()   != null ? item.getItemName().toLowerCase()   : "";
-            String desc = item.getDescription() != null ? item.getDescription().toLowerCase() : "";
-            String loc  = item.getLocation()    != null ? item.getLocation().toLowerCase()    : "";
-            if (!name.contains(q) && !desc.contains(q) && !loc.contains(q)) {
-                return false;
+        // 2. Text / keyword filter
+        if (!lowerQuery.isEmpty()) {
+            // Build searchable blob from all relevant fields
+            String blob = safe(item.getItemName()).toLowerCase()    + " "
+                        + safe(item.getCategory()).toLowerCase()    + " "
+                        + safe(item.getDescription()).toLowerCase() + " "
+                        + safe(item.getLocation()).toLowerCase()    + " "
+                        + safe(item.getReporterName()).toLowerCase();
+
+            // Split query into words; the item matches if ANY word appears in the blob
+            String[] words = lowerQuery.split("\\s+");
+            boolean matched = false;
+            for (String word : words) {
+                if (!word.isEmpty() && blob.contains(word)) {
+                    matched = true;
+                    break;
+                }
             }
+            if (!matched) return false;
         }
 
         return true;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Empty state
+    // ─────────────────────────────────────────────────────────────────────────
+
     private void updateEmptyState() {
-        if (itemList.isEmpty()) {
+        if (!initialLoadDone) {
+            // Still fetching — hide empty state to avoid showing "No results" too early
+            layoutEmptyState.setVisibility(View.GONE);
+        } else if (displayList.isEmpty()) {
             layoutEmptyState.setVisibility(View.VISIBLE);
             rvSearchResults.setVisibility(View.GONE);
         } else {
             layoutEmptyState.setVisibility(View.GONE);
             rvSearchResults.setVisibility(View.VISIBLE);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private String safe(String s) {
+        return s != null ? s : "";
     }
 }

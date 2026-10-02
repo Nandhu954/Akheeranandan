@@ -1,5 +1,7 @@
 package com.campusfind.app.activities;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.app.DatePickerDialog;
 import android.graphics.Bitmap;
 import android.os.Bundle;
@@ -19,6 +21,7 @@ import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Item;
 import com.campusfind.app.utils.FirestoreHelper;
+import com.campusfind.app.utils.MatchingEngine;
 import com.campusfind.app.utils.QRCodeHelper;
 import com.campusfind.app.utils.SessionManager;
 import com.google.android.material.appbar.MaterialToolbar;
@@ -28,6 +31,7 @@ import com.google.android.material.textfield.TextInputLayout;
 
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.List;
 import java.util.Locale;
 
 public class ReportLostActivity extends AppCompatActivity {
@@ -138,18 +142,81 @@ public class ReportLostActivity extends AppCompatActivity {
 
         long id = dbHelper.addLostItem(lostItem);
         if (id > 0) {
-            // Attach reporter details so other users can see who to contact
+            // Attach reporter details so finders can contact this user
             lostItem.setReporterName(sessionManager.getUserName());
             lostItem.setReporterEmail(sessionManager.getUserEmail());
             lostItem.setReporterRollNo(sessionManager.getUserRollNo());
 
-            // ✅ Sync to Firestore — makes this report visible on ALL devices
+            // ✅ Sync to Firestore — makes this Lost report visible to ALL devices
             FirestoreHelper.getInstance().saveLostItem(lostItem, null);
 
-            // Show owner QR dialog so the user can save their verification code
+            // Show the QR owner code dialog immediately
             showOwnerQRDialog(lostItem);
+
+            // ── In parallel: check if someone already found this item ────────────
+            final Item savedLostItem = lostItem;
+            FirestoreHelper.getInstance().getFoundItems(new FirestoreHelper.ItemsCallback() {
+                @Override
+                public void onSuccess(List<Item> foundItems) {
+                    List<Item> matches = MatchingEngine.findMatches(savedLostItem, foundItems);
+                    if (!matches.isEmpty()) {
+                        Item bestMatch = matches.get(0);
+                        // Show match toast — non-blocking (QR dialog may still be visible)
+                        Toast.makeText(ReportLostActivity.this,
+                                "🎯 Possible match! Someone found \"" + bestMatch.getItemName()
+                                + "\" — check the Search screen!",
+                                Toast.LENGTH_LONG).show();
+                        // Also notify the finder's email that the owner just reported
+                        notifyFinder(savedLostItem, bestMatch);
+                    }
+                }
+
+                @Override
+                public void onError(String message) {
+                    // Firestore unavailable — silently skip match check
+                }
+            });
+
         } else {
             Toast.makeText(this, "Failed to submit report. Please try again.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Notifies the finder (who reported a Found item) that the owner just submitted a Lost report.
+     * Opens Gmail with a pre-filled message to the finder's email.
+     */
+    private void notifyFinder(Item lostItem, Item foundItem) {
+        String finderEmail = foundItem.getReporterEmail();
+        if (finderEmail == null || finderEmail.isEmpty()) return;
+
+        String subject = "CampusFind: The owner of \"" + foundItem.getItemName() + "\" just reported it lost!";
+        String body    = "Hi " + (foundItem.getReporterName() != null ? foundItem.getReporterName() : "there") + ",\n\n"
+                + "The owner of the item you found has just submitted a lost report that matches yours!\n\n"
+                + "🔍 Their Lost Report:\n"
+                + "  Item: " + lostItem.getItemName() + "\n"
+                + "  Category: " + lostItem.getCategory() + "\n"
+                + "  Location Lost: " + lostItem.getLocation() + "\n"
+                + "  Date: " + lostItem.getDate() + "\n"
+                + "  Reported by: " + lostItem.getReporterName()
+                +  " (" + lostItem.getReporterRollNo() + ")\n\n"
+                + "📦 Your Found Report:\n"
+                + "  Item Found: " + foundItem.getItemName() + "\n"
+                + "  Location Found: " + foundItem.getLocation() + "\n\n"
+                + "Please arrange to return the item.\n"
+                + "The owner will show you their OWNER QR CODE for safe handover verification.\n\n"
+                + "— CampusFind App\nFind Lost. Return Found.";
+
+        Intent emailIntent = new Intent(Intent.ACTION_SENDTO);
+        emailIntent.setData(Uri.parse("mailto:"));
+        emailIntent.putExtra(Intent.EXTRA_EMAIL,   new String[]{finderEmail});
+        emailIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
+        emailIntent.putExtra(Intent.EXTRA_TEXT,    body);
+
+        try {
+            startActivity(Intent.createChooser(emailIntent, "Notify finder via..."));
+        } catch (Exception e) {
+            // No email app — silently skip
         }
     }
 

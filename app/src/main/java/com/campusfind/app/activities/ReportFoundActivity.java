@@ -283,42 +283,52 @@ public class ReportFoundActivity extends AppCompatActivity {
             return;
         }
 
-        // Attach reporter details so owner knows who found the item
+        // Attach reporter details so owner knows who found it
         foundItem.setReporterName(sessionManager.getUserName());
         foundItem.setReporterEmail(sessionManager.getUserEmail());
         foundItem.setReporterRollNo(sessionManager.getUserRollNo());
         foundItem.setItemId((int) id);
 
-        // ✅ Sync to Firestore — makes this report visible on ALL devices
+        // ✅ Sync to Firestore — makes this report visible to ALL users on ALL devices
         FirestoreHelper.getInstance().saveFoundItem(foundItem, null);
 
-        // --- Run smart matching against ALL lost items from Firestore (cross-device) ---
+        // Notify user while we check for matches in the background
         Toast.makeText(this, "Report submitted! Checking for matches...", Toast.LENGTH_SHORT).show();
 
+        // Use explicit final reference — required for anonymous inner class access
+        final Item savedFoundItem = foundItem;
+
+        // Fetch ALL lost items from Firestore (cross-device) and run matching
         FirestoreHelper.getInstance().getLostItems(new FirestoreHelper.ItemsCallback() {
             @Override
             public void onSuccess(List<Item> allLostItems) {
-                List<Item> matches = MatchingEngine.findMatches(foundItem, allLostItems);
+                List<Item> matches = MatchingEngine.findMatches(savedFoundItem, allLostItems);
                 if (!matches.isEmpty()) {
-                    // Auto-notify: open Gmail immediately — no "Skip" option
-                    autoSendMatchNotification(foundItem, matches);
+                    showMatchNotification(savedFoundItem, matches);
                 } else {
-                    Toast.makeText(ReportFoundActivity.this,
-                            "Found item reported! No matches yet.", Toast.LENGTH_LONG).show();
-                    finish();
+                    // Also check local SQLite in case Firestore lost items were submitted offline
+                    List<Item> localLost  = dbHelper.getLostItems(null, null);
+                    List<Item> localMatch = MatchingEngine.findMatches(savedFoundItem, localLost);
+                    if (!localMatch.isEmpty()) {
+                        showMatchNotification(savedFoundItem, localMatch);
+                    } else {
+                        Toast.makeText(ReportFoundActivity.this,
+                                "✅ Found item reported! No matches yet.", Toast.LENGTH_LONG).show();
+                        finish();
+                    }
                 }
             }
 
             @Override
             public void onError(String message) {
-                // Firestore unavailable — fall back to local SQLite matches
-                List<Item> localLost = dbHelper.getLostItems(null, null);
-                List<Item> matches   = MatchingEngine.findMatches(foundItem, localLost);
-                if (!matches.isEmpty()) {
-                    autoSendMatchNotification(foundItem, matches);
+                // Firestore unavailable — fall back to local SQLite matching
+                List<Item> localLost  = dbHelper.getLostItems(null, null);
+                List<Item> localMatch = MatchingEngine.findMatches(savedFoundItem, localLost);
+                if (!localMatch.isEmpty()) {
+                    showMatchNotification(savedFoundItem, localMatch);
                 } else {
                     Toast.makeText(ReportFoundActivity.this,
-                            "Found item reported successfully!", Toast.LENGTH_LONG).show();
+                            "✅ Found item reported successfully!", Toast.LENGTH_LONG).show();
                     finish();
                 }
             }
@@ -338,7 +348,7 @@ public class ReportFoundActivity extends AppCompatActivity {
      * Shows an info dialog and immediately opens Gmail with the notification pre-filled.
      * The finder CANNOT skip — the owner must be notified.
      */
-    private void autoSendMatchNotification(Item foundItem, List<Item> matches) {
+    private void showMatchNotification(Item foundItem, List<Item> matches) {
         Item bestMatch = matches.get(0);
         String ownerEmail = bestMatch.getReporterEmail() != null ? bestMatch.getReporterEmail() : "";
         String ownerName  = bestMatch.getReporterName()  != null ? bestMatch.getReporterName()  : "the owner";
