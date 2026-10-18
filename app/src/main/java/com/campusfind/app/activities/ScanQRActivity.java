@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat;
 import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Claim;
+import com.campusfind.app.models.Item;
+import com.campusfind.app.utils.FirestoreHelper;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -170,19 +172,53 @@ public class ScanQRActivity extends AppCompatActivity {
 
     /**
      * Handle Owner Verification Code (CF-XXXXXX).
-     * The finder scans the lost item owner's QR → confirms they are the real owner → marks item Returned.
+     * 1. Checks local SQLite first (fast, works offline on the owner's own device).
+     * 2. Falls back to Firestore if not found locally (cross-device: finder uses a different phone).
      */
     private void processOwnerVerificationCode(String ownerCode) {
-        com.campusfind.app.models.Item lostItem = dbHelper.getLostItemByOwnerCode(ownerCode);
-
-        if (lostItem == null) {
-            showResultDialog("❌ Code Not Found",
-                    "No lost item report was found for owner code:\n\n" + ownerCode
-                    + "\n\nAsk the owner to show you the QR from their CampusFind app (My Reports).",
-                    false);
+        // 1. Try local SQLite (instant)
+        Item lostItem = dbHelper.getLostItemByOwnerCode(ownerCode);
+        if (lostItem != null) {
+            showOwnerVerifiedDialog(lostItem, ownerCode, false);
             return;
         }
 
+        // 2. Not in local DB — query Firestore (owner used a different device)
+        FirestoreHelper.getInstance().getLostItemByOwnerCode(ownerCode,
+                new FirestoreHelper.ItemsCallback() {
+                    @Override
+                    public void onSuccess(java.util.List<Item> items) {
+                        runOnUiThread(() -> {
+                            if (items.isEmpty()) {
+                                isProcessing = false;
+                                showResultDialog("❌ Code Not Found",
+                                        "No lost item report was found for owner code:\n\n" + ownerCode
+                                        + "\n\nAsk the owner to show you the QR from their CampusFind app (My Reports).",
+                                        false);
+                            } else {
+                                showOwnerVerifiedDialog(items.get(0), ownerCode, true);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        runOnUiThread(() -> {
+                            isProcessing = false;
+                            showResultDialog("❌ Code Not Found",
+                                    "No lost item report found. Ask the owner to re-open their app.\n\nCode: " + ownerCode,
+                                    false);
+                        });
+                    }
+                });
+    }
+
+    /**
+     * Displays the "Owner Verified" confirmation dialog.
+     * fromCloud = true means the item was fetched from Firestore (not local SQLite),
+     * so completeOwnerHandover must update Firestore too.
+     */
+    private void showOwnerVerifiedDialog(Item lostItem, String ownerCode, boolean fromCloud) {
         if ("Returned".equalsIgnoreCase(lostItem.getStatus())) {
             showResultDialog("✅ Already Returned",
                     "This item has already been marked as returned.\n\n"
@@ -191,7 +227,6 @@ public class ScanQRActivity extends AppCompatActivity {
             return;
         }
 
-        // Build confirmation message for the finder
         String ownerName  = lostItem.getReporterName()  != null ? lostItem.getReporterName()  : "Unknown";
         String ownerRoll  = lostItem.getReporterRollNo() != null ? lostItem.getReporterRollNo() : "--";
         String ownerEmail = lostItem.getReporterEmail()  != null ? lostItem.getReporterEmail()  : "--";
@@ -208,13 +243,18 @@ public class ScanQRActivity extends AppCompatActivity {
                 + "• Email: " + ownerEmail + "\n\n"
                 + "Hand over the item and tap 'Complete Handover' to finish.";
 
-        // Show confirm dialog before marking complete
         new androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("🔐 Owner Verified!")
                 .setMessage(confirmMsg)
                 .setCancelable(false)
                 .setPositiveButton("✅ Complete Handover", (dialog, which) -> {
+                    // Try local SQLite update first
                     boolean done = dbHelper.completeOwnerHandover(ownerCode);
+                    if (!done) {
+                        // Item is cloud-only (different device) — update Firestore directly
+                        FirestoreHelper.getInstance().markReturnedByOwnerCode(ownerCode);
+                        done = true;
+                    }
                     if (done) {
                         showResultDialog("🎉 Handover Complete!",
                                 "The item \"" + lostItem.getItemName() + "\" has been\n"

@@ -47,6 +47,10 @@ dependencies {
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'com.google.firebase:firebase-analytics'
 
+    // JavaMail — automatic background email sending (no Gmail app / intent needed)
+    implementation 'com.sun.mail:android-mail:1.6.7'
+    implementation 'com.sun.mail:android-activation:1.6.7'
+
     // Testing
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

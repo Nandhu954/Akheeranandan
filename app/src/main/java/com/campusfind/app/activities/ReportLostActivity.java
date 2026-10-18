@@ -1,7 +1,5 @@
 package com.campusfind.app.activities;
 
-import android.content.Intent;
-import android.net.Uri;
 import android.app.DatePickerDialog;
 import android.graphics.Bitmap;
 import android.os.Bundle;
@@ -20,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Item;
+import com.campusfind.app.utils.EmailSender;
 import com.campusfind.app.utils.FirestoreHelper;
 import com.campusfind.app.utils.MatchingEngine;
 import com.campusfind.app.utils.QRCodeHelper;
@@ -184,7 +183,7 @@ public class ReportLostActivity extends AppCompatActivity {
 
     /**
      * Notifies the finder (who reported a Found item) that the owner just submitted a Lost report.
-     * Opens Gmail with a pre-filled message to the finder's email.
+     * Sends automatically via SMTP in a background thread — no dialog, no user tap.
      */
     private void notifyFinder(Item lostItem, Item foundItem) {
         String finderEmail = foundItem.getReporterEmail();
@@ -199,7 +198,7 @@ public class ReportLostActivity extends AppCompatActivity {
                 + "  Location Lost: " + lostItem.getLocation() + "\n"
                 + "  Date: " + lostItem.getDate() + "\n"
                 + "  Reported by: " + lostItem.getReporterName()
-                +  " (" + lostItem.getReporterRollNo() + ")\n\n"
+                + " (" + lostItem.getReporterRollNo() + ")\n\n"
                 + "📦 Your Found Report:\n"
                 + "  Item Found: " + foundItem.getItemName() + "\n"
                 + "  Location Found: " + foundItem.getLocation() + "\n\n"
@@ -207,17 +206,8 @@ public class ReportLostActivity extends AppCompatActivity {
                 + "The owner will show you their OWNER QR CODE for safe handover verification.\n\n"
                 + "— CampusFind App\nFind Lost. Return Found.";
 
-        Intent emailIntent = new Intent(Intent.ACTION_SENDTO);
-        emailIntent.setData(Uri.parse("mailto:"));
-        emailIntent.putExtra(Intent.EXTRA_EMAIL,   new String[]{finderEmail});
-        emailIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
-        emailIntent.putExtra(Intent.EXTRA_TEXT,    body);
-
-        try {
-            startActivity(Intent.createChooser(emailIntent, "Notify finder via..."));
-        } catch (Exception e) {
-            // No email app — silently skip
-        }
+        // Sends silently in background — no Gmail chooser, no user interaction
+        EmailSender.sendAsync(finderEmail, subject, body);
     }
 
     /**

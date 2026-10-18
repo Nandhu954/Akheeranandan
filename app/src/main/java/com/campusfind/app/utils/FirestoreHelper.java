@@ -138,6 +138,46 @@ public class FirestoreHelper {
                 });
     }
 
+    /**
+     * Find a lost item in Firestore by its owner verification code.
+     * Used by ScanQRActivity so a finder on a DIFFERENT device can verify the owner.
+     */
+    public void getLostItemByOwnerCode(String ownerCode, ItemsCallback callback) {
+        db.collection(COL_LOST)
+                .whereEqualTo("ownerCode", ownerCode.trim().toUpperCase())
+                .get()
+                .addOnSuccessListener(snapshots -> {
+                    List<Item> items = new ArrayList<>();
+                    for (QueryDocumentSnapshot doc : snapshots) {
+                        items.add(docToItem(doc, "Lost"));
+                    }
+                    callback.onSuccess(items);
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "getLostItemByOwnerCode failed: " + e.getMessage());
+                    callback.onError(e.getMessage());
+                });
+    }
+
+    /**
+     * Mark a lost item as Returned in Firestore by its owner code.
+     * Called when the finder completes a cross-device handover.
+     */
+    public void markReturnedByOwnerCode(String ownerCode) {
+        db.collection(COL_LOST)
+                .whereEqualTo("ownerCode", ownerCode.trim().toUpperCase())
+                .get()
+                .addOnSuccessListener(snapshots -> {
+                    for (QueryDocumentSnapshot doc : snapshots) {
+                        doc.getReference().update("status", "Returned")
+                                .addOnFailureListener(e ->
+                                        Log.e(TAG, "markReturnedByOwnerCode update failed: " + e.getMessage()));
+                    }
+                })
+                .addOnFailureListener(e ->
+                        Log.e(TAG, "markReturnedByOwnerCode query failed: " + e.getMessage()));
+    }
+
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
     /** Convert an Item to a Firestore-compatible Map. */

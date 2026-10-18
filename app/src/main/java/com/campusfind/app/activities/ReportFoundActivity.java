@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
-import android.provider.MediaStore;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -19,7 +18,6 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
@@ -27,6 +25,7 @@ import androidx.core.content.FileProvider;
 import com.campusfind.app.R;
 import com.campusfind.app.database.DatabaseHelper;
 import com.campusfind.app.models.Item;
+import com.campusfind.app.utils.EmailSender;
 import com.campusfind.app.utils.FirestoreHelper;
 import com.campusfind.app.utils.MatchingEngine;
 import com.campusfind.app.utils.SessionManager;
@@ -45,10 +44,18 @@ import java.util.Locale;
 public class ReportFoundActivity extends AppCompatActivity {
 
     private MaterialToolbar toolbar;
+
+    // ── Photo slot 1 ──
     private ImageView ivPhotoPreview;
     private LinearLayout layoutPhotoPlaceholder;
     private TextView tvPhotoError;
     private MaterialButton btnTakePhoto, btnChooseGallery;
+
+    // ── Photo slots 2 & 3 ──
+    private ImageView ivPhoto2Preview, ivPhoto3Preview;
+    private LinearLayout layoutPhoto2Placeholder, layoutPhoto3Placeholder;
+    private MaterialButton btnTakePhoto2, btnGallery2, btnTakePhoto3, btnGallery3;
+
     private TextInputLayout tilItemName, tilCategory, tilLocation, tilDate, tilDescription;
     private TextInputEditText etItemName, etLocation, etDate, etDescription;
     private AutoCompleteTextView actvCategory;
@@ -58,36 +65,38 @@ public class ReportFoundActivity extends AppCompatActivity {
     private SessionManager sessionManager;
     private final Calendar calendar = Calendar.getInstance();
 
-    private Uri photoUri;        // URI of the photo taken/selected
-    private String photoPath;    // Absolute path of the saved photo
+    // ── Multi-photo state ──
+    private final Uri[]    photoUris  = new Uri[3];
+    private final String[] photoPaths = new String[3];
+    private int currentPhotoSlot = 0;   // which slot the next camera/gallery result goes to
 
     // -----------------------------------------------------------------------
-    // Activity result launchers
+    // Activity result launchers — registered before onCreate
     // -----------------------------------------------------------------------
 
-    /** Launch camera, result = true if photo was taken successfully */
+    /** Camera: result goes to currentPhotoSlot */
     private final ActivityResultLauncher<Uri> cameraLauncher =
             registerForActivityResult(new ActivityResultContracts.TakePicture(), success -> {
-                if (success && photoUri != null) {
-                    showPhotoPreview(photoUri);
+                if (success && photoUris[currentPhotoSlot] != null) {
+                    showPhotoInSlot(currentPhotoSlot, photoUris[currentPhotoSlot]);
                 }
             });
 
-    /** Launch gallery picker */
+    /** Gallery: result goes to currentPhotoSlot */
     private final ActivityResultLauncher<String> galleryLauncher =
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
-                    photoUri = uri;
-                    photoPath = uri.toString();
-                    showPhotoPreview(uri);
+                    photoUris[currentPhotoSlot]  = uri;
+                    photoPaths[currentPhotoSlot] = uri.toString();
+                    showPhotoInSlot(currentPhotoSlot, uri);
                 }
             });
 
-    /** Ask for camera permission */
+    /** Camera permission — opens camera for currentPhotoSlot on grant */
     private final ActivityResultLauncher<String> cameraPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
                 if (granted) {
-                    openCamera();
+                    openCamera(currentPhotoSlot);
                 } else {
                     Toast.makeText(this, "Camera permission needed to take a photo", Toast.LENGTH_SHORT).show();
                 }
@@ -102,7 +111,7 @@ public class ReportFoundActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_report_found);
 
-        dbHelper = DatabaseHelper.getInstance(this);
+        dbHelper       = DatabaseHelper.getInstance(this);
         sessionManager = new SessionManager(this);
 
         initViews();
@@ -119,23 +128,33 @@ public class ReportFoundActivity extends AppCompatActivity {
 
     private void initViews() {
         toolbar = findViewById(R.id.toolbarReportFound);
-        ivPhotoPreview = findViewById(R.id.ivPhotoPreview);
-        layoutPhotoPlaceholder = findViewById(R.id.layoutPhotoPlaceholder);
-        tvPhotoError = findViewById(R.id.tvPhotoError);
-        btnTakePhoto = findViewById(R.id.btnTakePhoto);
-        btnChooseGallery = findViewById(R.id.btnChooseGallery);
 
-        tilItemName = findViewById(R.id.tilItemName);
-        tilCategory = findViewById(R.id.tilCategory);
-        tilLocation = findViewById(R.id.tilLocation);
-        tilDate = findViewById(R.id.tilDate);
+        ivPhotoPreview       = findViewById(R.id.ivPhotoPreview);
+        layoutPhotoPlaceholder = findViewById(R.id.layoutPhotoPlaceholder);
+        tvPhotoError         = findViewById(R.id.tvPhotoError);
+        btnTakePhoto         = findViewById(R.id.btnTakePhoto);
+        btnChooseGallery     = findViewById(R.id.btnChooseGallery);
+
+        ivPhoto2Preview        = findViewById(R.id.ivPhoto2Preview);
+        ivPhoto3Preview        = findViewById(R.id.ivPhoto3Preview);
+        layoutPhoto2Placeholder = findViewById(R.id.layoutPhoto2Placeholder);
+        layoutPhoto3Placeholder = findViewById(R.id.layoutPhoto3Placeholder);
+        btnTakePhoto2          = findViewById(R.id.btnTakePhoto2);
+        btnGallery2            = findViewById(R.id.btnGallery2);
+        btnTakePhoto3          = findViewById(R.id.btnTakePhoto3);
+        btnGallery3            = findViewById(R.id.btnGallery3);
+
+        tilItemName    = findViewById(R.id.tilItemName);
+        tilCategory    = findViewById(R.id.tilCategory);
+        tilLocation    = findViewById(R.id.tilLocation);
+        tilDate        = findViewById(R.id.tilDate);
         tilDescription = findViewById(R.id.tilDescription);
 
-        etItemName = findViewById(R.id.etItemName);
-        actvCategory = findViewById(R.id.actvCategory);
-        etLocation = findViewById(R.id.etLocation);
-        etDate = findViewById(R.id.etDate);
-        etDescription = findViewById(R.id.etDescription);
+        etItemName     = findViewById(R.id.etItemName);
+        actvCategory   = findViewById(R.id.actvCategory);
+        etLocation     = findViewById(R.id.etLocation);
+        etDate         = findViewById(R.id.etDate);
+        etDescription  = findViewById(R.id.etDescription);
 
         btnSubmitFound = findViewById(R.id.btnSubmitFound);
     }
@@ -174,25 +193,46 @@ public class ReportFoundActivity extends AppCompatActivity {
     // -----------------------------------------------------------------------
 
     private void setupPhotoButtons() {
-        btnTakePhoto.setOnClickListener(v -> {
+        // Slot 1
+        btnTakePhoto.setOnClickListener(v -> openPhotoSlot(0, true));
+        btnChooseGallery.setOnClickListener(v -> openPhotoSlot(0, false));
+
+        // Slot 2
+        btnTakePhoto2.setOnClickListener(v -> openPhotoSlot(1, true));
+        btnGallery2.setOnClickListener(v -> openPhotoSlot(1, false));
+
+        // Slot 3
+        btnTakePhoto3.setOnClickListener(v -> openPhotoSlot(2, true));
+        btnGallery3.setOnClickListener(v -> openPhotoSlot(2, false));
+
+        // Tap any filled preview to open in system viewer (pinch-zoom supported)
+        ivPhotoPreview.setOnClickListener(v -> openImageViewer(0));
+        ivPhoto2Preview.setOnClickListener(v -> openImageViewer(1));
+        ivPhoto3Preview.setOnClickListener(v -> openImageViewer(2));
+    }
+
+    /** Opens camera or gallery for the given slot. */
+    private void openPhotoSlot(int slot, boolean useCamera) {
+        currentPhotoSlot = slot;
+        if (useCamera) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED) {
-                openCamera();
+                openCamera(slot);
             } else {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA);
             }
-        });
-
-        btnChooseGallery.setOnClickListener(v -> galleryLauncher.launch("image/*"));
+        } else {
+            galleryLauncher.launch("image/*");
+        }
     }
 
-    private void openCamera() {
+    private void openCamera(int slot) {
         try {
             File photoFile = createImageFile();
-            photoUri = FileProvider.getUriForFile(this,
+            photoUris[slot] = FileProvider.getUriForFile(this,
                     getPackageName() + ".provider", photoFile);
-            photoPath = photoFile.getAbsolutePath();
-            cameraLauncher.launch(photoUri);
+            photoPaths[slot] = photoFile.getAbsolutePath();
+            cameraLauncher.launch(photoUris[slot]);
         } catch (IOException e) {
             Toast.makeText(this, "Could not open camera", Toast.LENGTH_SHORT).show();
         }
@@ -205,11 +245,39 @@ public class ReportFoundActivity extends AppCompatActivity {
         return File.createTempFile(imageFileName, ".jpg", storageDir);
     }
 
-    private void showPhotoPreview(Uri uri) {
-        ivPhotoPreview.setImageURI(uri);
-        ivPhotoPreview.setVisibility(View.VISIBLE);
-        layoutPhotoPlaceholder.setVisibility(View.GONE);
-        tvPhotoError.setVisibility(View.GONE);
+    /** Shows the photo in the correct preview ImageView and hides the placeholder. */
+    private void showPhotoInSlot(int slot, Uri uri) {
+        switch (slot) {
+            case 0:
+                ivPhotoPreview.setImageURI(uri);
+                ivPhotoPreview.setVisibility(View.VISIBLE);
+                layoutPhotoPlaceholder.setVisibility(View.GONE);
+                tvPhotoError.setVisibility(View.GONE);
+                break;
+            case 1:
+                ivPhoto2Preview.setImageURI(uri);
+                ivPhoto2Preview.setVisibility(View.VISIBLE);
+                layoutPhoto2Placeholder.setVisibility(View.GONE);
+                break;
+            case 2:
+                ivPhoto3Preview.setImageURI(uri);
+                ivPhoto3Preview.setVisibility(View.VISIBLE);
+                layoutPhoto3Placeholder.setVisibility(View.GONE);
+                break;
+        }
+    }
+
+    /** Opens the selected photo in the system gallery/viewer which supports pinch-zoom. */
+    private void openImageViewer(int slot) {
+        if (photoUris[slot] == null) return;
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(photoUris[slot], "image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(intent);
+        } catch (Exception ignored) {
+            Toast.makeText(this, "No image viewer found", Toast.LENGTH_SHORT).show();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -228,16 +296,16 @@ public class ReportFoundActivity extends AppCompatActivity {
         tilDate.setError(null);
         tvPhotoError.setVisibility(View.GONE);
 
-        String itemName  = etItemName.getText() != null ? etItemName.getText().toString().trim() : "";
-        String category  = actvCategory.getText() != null ? actvCategory.getText().toString().trim() : "";
-        String location  = etLocation.getText() != null ? etLocation.getText().toString().trim() : "";
-        String date      = etDate.getText() != null ? etDate.getText().toString().trim() : "";
-        String desc      = etDescription.getText() != null ? etDescription.getText().toString().trim() : "";
+        String itemName = etItemName.getText()   != null ? etItemName.getText().toString().trim()   : "";
+        String category = actvCategory.getText() != null ? actvCategory.getText().toString().trim() : "";
+        String location = etLocation.getText()   != null ? etLocation.getText().toString().trim()   : "";
+        String date     = etDate.getText()       != null ? etDate.getText().toString().trim()       : "";
+        String desc     = etDescription.getText()!= null ? etDescription.getText().toString().trim(): "";
 
         boolean hasError = false;
 
-        // Validate photo (mandatory)
-        if (photoPath == null || photoPath.isEmpty()) {
+        // Photo 1 is mandatory
+        if (photoPaths[0] == null || photoPaths[0].isEmpty()) {
             tvPhotoError.setVisibility(View.VISIBLE);
             hasError = true;
         }
@@ -265,6 +333,15 @@ public class ReportFoundActivity extends AppCompatActivity {
 
         if (hasError) return;
 
+        // --- Build combined photo path (pipe-separated) ---
+        StringBuilder photoSb = new StringBuilder();
+        for (String p : photoPaths) {
+            if (p != null && !p.isEmpty()) {
+                if (photoSb.length() > 0) photoSb.append("||");
+                photoSb.append(p);
+            }
+        }
+
         // --- Build and save the found item ---
         Item foundItem = new Item();
         foundItem.setUserId(sessionManager.getUserId());
@@ -275,7 +352,7 @@ public class ReportFoundActivity extends AppCompatActivity {
         foundItem.setDate(date);
         foundItem.setDescription(desc);
         foundItem.setStatus("Active");
-        foundItem.setPhotoPath(photoPath);
+        foundItem.setPhotoPath(photoSb.toString());
 
         long id = dbHelper.addFoundItem(foundItem);
         if (id <= 0) {
@@ -292,10 +369,8 @@ public class ReportFoundActivity extends AppCompatActivity {
         // ✅ Sync to Firestore — makes this report visible to ALL users on ALL devices
         FirestoreHelper.getInstance().saveFoundItem(foundItem, null);
 
-        // Notify user while we check for matches in the background
         Toast.makeText(this, "Report submitted! Checking for matches...", Toast.LENGTH_SHORT).show();
 
-        // Use explicit final reference — required for anonymous inner class access
         final Item savedFoundItem = foundItem;
 
         // Fetch ALL lost items from Firestore (cross-device) and run matching
@@ -304,13 +379,13 @@ public class ReportFoundActivity extends AppCompatActivity {
             public void onSuccess(List<Item> allLostItems) {
                 List<Item> matches = MatchingEngine.findMatches(savedFoundItem, allLostItems);
                 if (!matches.isEmpty()) {
-                    showMatchNotification(savedFoundItem, matches);
+                    sendMatchEmailAuto(savedFoundItem, matches);
                 } else {
                     // Also check local SQLite in case Firestore lost items were submitted offline
                     List<Item> localLost  = dbHelper.getLostItems(null, null);
                     List<Item> localMatch = MatchingEngine.findMatches(savedFoundItem, localLost);
                     if (!localMatch.isEmpty()) {
-                        showMatchNotification(savedFoundItem, localMatch);
+                        sendMatchEmailAuto(savedFoundItem, localMatch);
                     } else {
                         Toast.makeText(ReportFoundActivity.this,
                                 "✅ Found item reported! No matches yet.", Toast.LENGTH_LONG).show();
@@ -325,7 +400,7 @@ public class ReportFoundActivity extends AppCompatActivity {
                 List<Item> localLost  = dbHelper.getLostItems(null, null);
                 List<Item> localMatch = MatchingEngine.findMatches(savedFoundItem, localLost);
                 if (!localMatch.isEmpty()) {
-                    showMatchNotification(savedFoundItem, localMatch);
+                    sendMatchEmailAuto(savedFoundItem, localMatch);
                 } else {
                     Toast.makeText(ReportFoundActivity.this,
                             "✅ Found item reported successfully!", Toast.LENGTH_LONG).show();
@@ -336,76 +411,43 @@ public class ReportFoundActivity extends AppCompatActivity {
     }
 
     // -----------------------------------------------------------------------
-    // Match notification dialog
-    // -----------------------------------------------------------------------
-
-    // -----------------------------------------------------------------------
-    // Automatic match notification — fires without asking the finder
+    // Automatic match email — no dialog, no user tap required
     // -----------------------------------------------------------------------
 
     /**
-     * Called when a found item scores ≥ 2 against one or more lost items.
-     * Shows an info dialog and immediately opens Gmail with the notification pre-filled.
-     * The finder CANNOT skip — the owner must be notified.
+     * Called when a match is found. Sends an email to the lost item owner
+     * automatically in the background — no dialog, no user action needed.
      */
-    private void showMatchNotification(Item foundItem, List<Item> matches) {
+    private void sendMatchEmailAuto(Item foundItem, List<Item> matches) {
         Item bestMatch = matches.get(0);
         String ownerEmail = bestMatch.getReporterEmail() != null ? bestMatch.getReporterEmail() : "";
         String ownerName  = bestMatch.getReporterName()  != null ? bestMatch.getReporterName()  : "the owner";
 
-        new AlertDialog.Builder(this)
-                .setTitle("🎯 Match Found! Notifying Owner...")
-                .setMessage("Your found item matches a lost report by " + ownerName
-                        + " for \"" + bestMatch.getItemName() + "\" "
-                        + "at " + bestMatch.getLocation() + ".\n\n"
-                        + "📧 Gmail will open automatically to notify the owner.\n"
-                        + "Please tap SEND to complete the notification.")
-                .setPositiveButton("📧 Open Gmail & Notify", (dialog, which) -> {
-                    sendMatchEmail(ownerEmail, ownerName, bestMatch, foundItem);
-                })
-                .setCancelable(false)
-                .show();
-    }
-
-    /**
-     * Opens Gmail (or any email app) with a pre-filled match notification email.
-     * Uses Android's standard Gmail Intent — no backend or API key needed.
-     */
-    private void sendMatchEmail(String toEmail, String ownerName, Item lostItem, Item foundItem) {
-        String subject = "CampusFind: Someone Found Your Lost " + lostItem.getItemName() + "!";
+        String subject = "CampusFind: Someone Found Your Lost " + bestMatch.getItemName() + "!";
         String body = "Hi " + ownerName + ",\n\n"
                 + "Great news! Someone on campus has reported finding an item that may be yours.\n\n"
                 + "🔍 Your Lost Item:\n"
-                + "  Item: "          + lostItem.getItemName()  + "\n"
-                + "  Category: "      + lostItem.getCategory()  + "\n"
-                + "  Location Lost: " + lostItem.getLocation()  + "\n"
-                + "  Date: "          + lostItem.getDate()      + "\n\n"
+                + "  Item: "          + bestMatch.getItemName()  + "\n"
+                + "  Category: "      + bestMatch.getCategory()  + "\n"
+                + "  Location Lost: " + bestMatch.getLocation()  + "\n"
+                + "  Date: "          + bestMatch.getDate()      + "\n\n"
                 + "📦 Found Item Report:\n"
                 + "  Item Found: "      + foundItem.getItemName() + "\n"
                 + "  Category: "        + foundItem.getCategory() + "\n"
                 + "  Location Found: "  + foundItem.getLocation() + "\n"
                 + "  Date Found: "      + foundItem.getDate()     + "\n"
                 + "  Reported by: "     + foundItem.getReporterName()
-                +  " (" + foundItem.getReporterRollNo() + ")\n\n"
+                + " (" + foundItem.getReporterRollNo() + ")\n\n"
                 + "👉 Open CampusFind → Search Items → Found tab to see the photo.\n\n"
                 + "To collect your item safely, show your OWNER QR CODE to the finder.\n\n"
                 + "— CampusFind App\nFind Lost. Return Found.";
 
-        Intent emailIntent = new Intent(Intent.ACTION_SENDTO);
-        emailIntent.setData(Uri.parse("mailto:"));
-        emailIntent.putExtra(Intent.EXTRA_EMAIL,   new String[]{toEmail});
-        emailIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
-        emailIntent.putExtra(Intent.EXTRA_TEXT,    body);
+        // Sends silently in background — no Gmail chooser, no user interaction
+        EmailSender.sendAsync(ownerEmail, subject, body);
 
-        try {
-            startActivity(Intent.createChooser(emailIntent, "Notify owner via..."));
-        } catch (Exception e) {
-            Toast.makeText(this,
-                    "No email app found. Please contact owner manually: " + toEmail,
-                    Toast.LENGTH_LONG).show();
-        }
-
-        Toast.makeText(this, "✅ Match reported! Owner notified.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,
+                "🎯 Match found! Owner notified automatically via email.",
+                Toast.LENGTH_LONG).show();
         finish();
     }
 }
